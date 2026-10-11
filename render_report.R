@@ -1,0 +1,11 @@
+args <- commandArgs(trailingOnly=FALSE)
+entry <- sub('^--file=','',args[grepl('^--file=',args)])
+if(length(entry)) setwd(dirname(normalizePath(entry[1])))
+if(dir.exists('library')) .libPaths(c(normalizePath('library'),.libPaths()))
+if(!requireNamespace('rmarkdown',quietly=TRUE)) stop('Install rmarkdown and knitr; dependency-free results/report.html is already available.')
+if(!file.exists('results/models.rds')) stop('Run Rscript run.R first.')
+rmarkdown::render('report/report.Rmd',output_file='report_rmarkdown.html',output_dir=normalizePath('results'),quiet=TRUE)
+writeLines(capture.output(sessionInfo()),'results/report_sessionInfo.txt')
+files <- list.files('.',recursive=TRUE,full.names=TRUE)
+files <- files[!grepl('manifest.csv$|^./library/',files)]
+write.csv(data.frame(file=files,md5=unname(tools::md5sum(files))),'results/manifest.csv',row.names=FALSE)
