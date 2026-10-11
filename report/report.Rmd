@@ -1,0 +1,138 @@
+---
+title: "Survival and Prognostic Factor Analysis in Clinical Trials"
+subtitle: "An educational secondary analysis of survival::colon"
+output:
+  html_document:
+    toc: true
+    toc_depth: 2
+    number_sections: true
+    self_contained: true
+    theme: readable
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo=FALSE, warning=FALSE, message=FALSE, out.width='100%')
+root <- normalizePath('..')
+knitr::opts_knit$set(root.dir=root)
+table_file <- function(name,caption) {
+  d <- read.csv(file.path(root,'results/tables',paste0(name,'.csv')),check.names=FALSE)
+  for(v in names(d)) if(is.numeric(d[[v]])) d[[v]] <- signif(d[[v]],4)
+  knitr::kable(d,caption=caption)
+}
+picture <- function(name) knitr::include_graphics(file.path(root,'results/figures',paste0(name,'.png')),rel_path=FALSE)
+```
+
+# Clinical question and endpoints
+
+How do overall survival outcomes differ across randomized observation, levamisole, and levamisole plus 5-FU arms, and which baseline characteristics are associated with mortality?
+
+The primary endpoint is all-cause death using only `etype=2` records. `status=1` indicates an event and `status=0` censoring. There are two records per participant in the original data, so pooling both event types as independent patients is invalid. Times are in days; one plotted year is 365.25 days. Registration is the working time origin; the public dataset cannot independently verify the full trial protocol.
+
+The exploratory recurrence-or-death endpoint combines paired records at their earliest time, counting an event only when recurrence or death is observed at that time. Follow-up ends at the shorter available endpoint window. This is a conservative reconstructed composite, not a verified protocol-defined DFS endpoint. A recurrence-only KM estimate would not be cumulative recurrence incidence when death is a competing event.
+
+```{r endpoints}
+table_file('endpoints','Endpoint event counts')
+table_file('cohort_flow','Analysis cohort flow')
+table_file('missingness','Baseline missingness')
+```
+
+# Statistical analysis plan
+
+The full death-record cohort is used for KM and log-rank comparisons. The adjusted model uses complete cases for a prespecified set of covariates: randomized treatment, age per 10 years, sex, log(1 + positive nodes), obstruction, perforation, adherence, differentiation, extent, and surgery-to-registration category. Observation, female, well differentiated, submucosa and indicator 0 are references. The sparse submucosa category can produce imprecise extent contrasts. `node4` is excluded from the primary model because the official documentation flags inconsistency with the node count; discrepancies are exported without silently repairing them. Missingness and exclusions must inform interpretation; no imputation is performed.
+
+KM intervals use a log-log transformation; Cox models use Efron ties. One global log-rank test is primary; secondary pairwise tests use Holm adjustment. Individual prognostic and diagnostic tests are exploratory. No automated variable selection is used. Censoring is assumed noninformative conditional on modeled information.
+
+# Baseline characteristics and follow-up
+
+Percentages include all patients in each arm in the denominator, with missing values explicitly shown. No baseline significance tests are used.
+
+```{r baseline}
+table_file('baseline','Baseline characteristics by randomized treatment')
+table_file('followup','Reverse Kaplan-Meier follow-up')
+```
+
+# Kaplan-Meier and log-rank results
+
+```{r km}
+picture('km_overall_survival')
+table_file('logrank','Global OS log-rank comparison')
+table_file('pairwise_logrank','Secondary pairwise comparisons')
+table_file('km_landmarks','Pointwise survival estimates at 1, 3 and 5 years')
+table_file('km_medians','KM median survival; missing median means not reached')
+```
+
+# Cox regression
+
+```{r cox}
+table_file('cox_unadjusted','Unadjusted treatment hazard ratios')
+table_file('cox_adjusted','Adjusted hazard ratios and 95% confidence intervals')
+picture('cox_forest')
+table_file('cox_performance','Apparent concordance; not externally validated')
+```
+
+HR below 1 denotes lower instantaneous death hazard relative to the reference, assuming proportional hazards. Age is scaled per 10 years. A one-unit log(1 + nodes) change is not one additional node. Randomization supports treatment comparisons, but complete-case exclusions and model assumptions limit adjusted causal interpretation. Baseline prognostic associations do not establish causality or validated prediction. Confidence intervals are pointwise, without adjustment for multiple prognostic comparisons.
+
+# Diagnostics and sensitivity
+
+```{r diagnostics}
+table_file('proportional_hazards','Scaled Schoenfeld residual tests')
+picture('schoenfeld')
+picture('martingale')
+picture('influence')
+table_file('functional_form_aic','Continuous-covariate functional form sensitivity on the same cohort')
+table_file('cox_time_interaction','Treatment HRs before and after a prespecified two-year split')
+table_file('cox_treatment_stratified','Treatment-stratified Cox sensitivity')
+table_file('cox_ph_covariate_stratified','Exploratory model stratified by obstruction and differentiation')
+table_file('ph_stratified_diagnostics','PH diagnostics after covariate stratification')
+```
+
+Inspect term-specific and global Schoenfeld results together with curves. Nonsignificance does not prove PH. Time-specific treatment estimates are exploratory and use patient-clustered standard errors after splitting follow-up; the two-year boundary was fixed before inspecting results. Stratifying by treatment removes the common treatment HR while permitting different baseline hazards. Martingale smooths and natural spline comparisons assess functional form; flagged DFBETAS values trigger review, not automatic deletion. The full influence table and likelihood-ratio test are in `results/tables`.
+
+# Parametric survival analysis
+
+```{r diagnostic_interpretation, results='asis'}
+ph_results <- read.csv(file.path(root,'results/tables/proportional_hazards.csv'))
+cat(sprintf('The global PH test yields p = %.4g. Obstruction and differentiation show evidence against PH; interpret common hazard ratios cautiously. The model stratified by those factors is an exploratory response to these diagnostics, chosen after examining the data. It retains treatment estimates but does not estimate common HRs for the stratification factors.\n\n',ph_results$p[ph_results$term=='GLOBAL']))
+```
+
+Exponential, Weibull, log-normal and log-logistic AFT models share the same covariates and complete-case sample. Compare their full likelihood AIC/BIC with each other, not with Cox partial-likelihood AIC. Exponentiated regression coefficients are time ratios, not general hazard ratios; the intercept is a baseline scale parameter.
+
+```{r parametric}
+table_file('parametric_comparison','AFT model comparison')
+table_file('aft_time_ratios','AFT time ratios and 95% intervals; intercept is baseline scale')
+picture('parametric_survival')
+picture('aft_cox_snell')
+```
+
+Standardized curves average predictions across observed complete-case covariates after assigning each treatment; they have no confidence bands. Cox-Snell diagnostics compare the estimated cumulative residual hazard to the diagonal and accommodate censoring. Lower AIC ranks these candidates; it does not validate extrapolation or tail behavior.
+
+# Exploratory recurrence-or-death analysis
+
+```{r dfs}
+picture('km_recurrence_or_death')
+table_file('dfs_logrank','Exploratory reconstructed composite comparison')
+```
+
+# Limitations and conclusions
+
+```{r conclusion, results='asis'}
+hr <- read.csv(file.path(root,'results/tables/cox_adjusted.csv'))
+tr <- hr[hr$term=='rxLev+5FU',]
+fit <- read.csv(file.path(root,'results/tables/parametric_comparison.csv'))
+cat(sprintf('The adjusted Lev+5FU versus observation mortality HR is **%.2f (95%% CI %.2f to %.2f)**. This summarizes the fitted common treatment contrast; global PH violations require the diagnostic and sensitivity context above. **%s** has the lowest AIC among the four AFT candidates.\n\n',tr$HR,tr$lower,tr$upper,fit$distribution[which.min(fit$AIC)]))
+```
+
+This historical trial dataset has missing covariates, known inconsistent node fields, sparse categories, incomplete protocol metadata, and no contemporary biomarkers. Complete-case inference can be biased if exclusions are informative. This project is an educational secondary analysis and not a current treatment recommendation, confirmatory trial reanalysis, or validated patient-risk tool. Interpret the estimated treatment contrasts in the context of PH diagnostics and sensitivity estimates; any prognostic findings are associations requiring external confirmation.
+
+# Reproducibility and references
+
+All tables, figures, models, derived data, checksums, and session details are generated by `Rscript run.R`. No manually typed effect estimates are used in the report.
+
+- [Official colon dataset documentation](https://stat.ethz.ch/R-manual/R-devel/library/survival/html/colon.html)
+- [Cox model documentation](https://stat.ethz.ch/R-manual/R-devel/library/survival/html/coxph.html)
+- [PH diagnostics](https://stat.ethz.ch/R-manual/R-devel/library/survival/html/cox.zph.html)
+- [Parametric survival regression and parameterization](https://stat.ethz.ch/R-manual/R-devel/library/survival/html/survreg.html)
+
+```{r session}
+cat(readLines(file.path(root,'results/sessionInfo.txt')),sep='\n')
+```

@@ -1,0 +1,30 @@
+km <- survfit(Surv(time,status)~rx,data=os,conf.type='log-log')
+lr <- survdiff(Surv(time,status)~rx,data=os)
+tab(data.frame(endpoint='OS',chisq=lr$chisq,df=length(lr$n)-1,p=pchisq(lr$chisq,length(lr$n)-1,lower.tail=FALSE)),'logrank')
+s <- summary(km,times=c(1,3,5)*config$years,extend=FALSE)
+tab(data.frame(treatment=s$strata,years=s$time/config$years,at_risk=s$n.risk,survival=s$surv,lower=s$lower,upper=s$upper),'km_landmarks')
+tab(data.frame(treatment=rownames(summary(km)$table),summary(km)$table,check.names=FALSE),'km_medians')
+draw_km <- function(fit,title) {
+  layout(matrix(c(1,2),2),heights=c(4,1.8))
+  par(mar=c(.5,6.5,3,1))
+  plot(fit,xscale=config$years,col=cols,lwd=2,conf.int=TRUE,mark.time=TRUE,xlab='',ylab='Survival probability',main=title,xaxt='n')
+  legend('bottomleft',legend=levels(os$rx),col=cols,lwd=2,bty='n',cex=.85)
+  par(mar=c(4.5,6.5,1.2,1))
+  times <- seq(0,floor(max(os$time)/config$years))*config$years
+  rs <- summary(fit,times=times,extend=TRUE)
+  plot(0,0,type='n',xlim=c(0,max(os$time)/config$years),ylim=c(.5,3.6),axes=FALSE,xlab='',ylab='')
+  axis(1); mtext('Years since registration',side=1,line=2.5,cex=.85)
+  axis(2,at=3:1,labels=levels(os$rx),tick=FALSE,las=1,cex.axis=.7)
+  mtext('Number at risk',side=3,line=0,adj=0,cex=.75)
+  for(j in 1:3) {ix <- as.integer(rs$strata)==j; text(rs$time[ix]/config$years,4-j,rs$n.risk[ix],col=cols[j],cex=.75)}
+  layout(1)
+}
+fig('km_overall_survival',function()draw_km(km,'Overall survival by randomized treatment'),height=6)
+km_dfs <- survfit(Surv(time,status)~rx,data=dfs,conf.type='log-log')
+fig('km_recurrence_or_death',function()draw_km(km_dfs,'Exploratory recurrence-or-death endpoint'),height=6)
+lr_dfs <- survdiff(Surv(time,status)~rx,data=dfs)
+tab(data.frame(chisq=lr_dfs$chisq,df=2,p=pchisq(lr_dfs$chisq,2,lower.tail=FALSE)),'dfs_logrank')
+# Pairwise OS comparisons are secondary; Holm family-wise correction.
+pairs <- combn(levels(os$rx),2,simplify=FALSE)
+pw <- do.call(rbind,lapply(pairs,function(g){d<-droplevels(os[os$rx %in% g,]);z<-survdiff(Surv(time,status)~rx,data=d);data.frame(comparison=paste(g,collapse=' vs '),p=pchisq(z$chisq,1,lower.tail=FALSE))}))
+pw$p_holm <- p.adjust(pw$p,'holm'); tab(pw,'pairwise_logrank')

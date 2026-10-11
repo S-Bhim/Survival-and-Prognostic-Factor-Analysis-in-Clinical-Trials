@@ -1,0 +1,9 @@
+Analysis of Deviance Table
+ Cox model: response is  Surv(time, status)
+ Model 1: ~ rx + age10 + sex + lognodes + obstruct + perfor + adhere + differ + extent + surg
+ Model 2: ~ rx + sex + obstruct + perfor + adhere + differ + extent + surg + splines::ns(age, df = 3) + splines::ns(lognodes, df = 3)
+   loglik  Chisq Df Pr(>|Chi|)  
+1 -2696.1                       
+2 -2691.9 8.3146  4    0.08071 .
+---
+Signif. codes:  0 '***' 0.001 '**' 0.01 '*' 0.05 '.' 0.1 ' ' 1

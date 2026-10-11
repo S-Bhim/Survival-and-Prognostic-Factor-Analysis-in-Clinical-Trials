@@ -1,0 +1,1 @@
+PASS: 23 unchanged numerical CSV tables matched byte-for-byte across final rerun. Baseline table intentionally reformatted to treatment columns.
